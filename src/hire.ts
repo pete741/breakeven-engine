@@ -44,6 +44,10 @@ export interface HireSpec {
   avgVisitsPerPatient: number;
   /** Extra running cost per week this hire adds (room, admin time, software, consumables). */
   extraWeeklyCost: number;
+  /** Caseload (visits per week) the practitioner starts with in week one, e.g. an
+   *  inherited or taken-over caseload. Defaults to 0 (a cold start). It lifts the
+   *  early months, so it shrinks the cash dip and brings the break even forward. */
+  startingCaseload?: number;
 }
 
 export interface HireSettings {
@@ -164,11 +168,15 @@ export function forecastHire(
   };
 
   const full = Math.max(0, safe(spec.fullClientsPerWeek));
+  // A taken-over caseload they start week one on. Cannot exceed a full book.
+  const baseline = Math.max(0, Math.min(full, safe(spec.startingCaseload ?? 0)));
   const cap = demandCapWeekly(spec);
-  // The plateau is whichever ceiling is lower once the ramp has finished.
-  const plateau = Math.min(full, cap);
+  // An inherited book is real ongoing demand, so the effective ceiling is the
+  // greater of new patient flow and the baseline, never above a full book.
+  const ceiling = Math.min(full, Math.max(baseline, cap));
+  const plateau = ceiling;
   const bindingConstraint: BindingConstraint =
-    cap < full - 1e-9 ? "newPatientFlow" : "ramp";
+    ceiling < full - 1e-9 ? "newPatientFlow" : "ramp";
 
   // Run the validated engine for a single site holding only this hire at a given
   // weekly caseload. The site's weekly profit IS the hire's marginal weekly
@@ -215,7 +223,10 @@ export function forecastHire(
 
   for (let m = 1; m <= horizonMonths; m++) {
     const rampFraction = rampFractionAt(spec.rampShape, m);
-    const caseloadWeekly = Math.min(rampFraction * full, cap);
+    // The book ramps from the baseline up toward a full book, held under the
+    // effective ceiling (new patient flow or the inherited book).
+    const organic = baseline + (full - baseline) * rampFraction;
+    const caseloadWeekly = Math.min(ceiling, organic);
 
     const site = runAt(caseloadWeekly);
     const person = site.people[0];
