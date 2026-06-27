@@ -4,6 +4,8 @@ import {
   demandCapWeekly,
   rampFractionAt,
   rampFullMonth,
+  rampFractionToMonth,
+  newPatientsForFullBook,
   type HireSpec,
   type HireSettings,
 } from "./hire";
@@ -167,6 +169,39 @@ describe("starting caseload (taking over clients)", () => {
     // 2 new patients/mo is a tiny flow, but they inherit 25 a week.
     const f = forecastHire(healthySpec({ startingCaseload: 25, newPatientsPerMonth: 2, avgVisitsPerPatient: 6 }), settings);
     expect(f.plateauCaseloadWeekly).toBeCloseTo(25, 4);
+  });
+});
+
+describe("reactivations are free demand that lift the plateau", () => {
+  it("reactivations raise the sustainable book without any marketing", () => {
+    const noReact = forecastHire(healthySpec({ newPatientsPerMonth: 20, reactivationsPerMonth: 0 }), settings);
+    const withReact = forecastHire(healthySpec({ newPatientsPerMonth: 20, reactivationsPerMonth: 8 }), settings);
+    expect(withReact.plateauCaseloadWeekly).toBeGreaterThan(noReact.plateauCaseloadWeekly);
+    // 28 episodes/mo * 7 visits / (52/12) weeks
+    expect(demandCapWeekly(healthySpec({ newPatientsPerMonth: 20, reactivationsPerMonth: 8, avgVisitsPerPatient: 7 })))
+      .toBeCloseTo((28 * 7) / (52 / 12), 4);
+  });
+});
+
+describe("newPatientsForFullBook + parametric fill ramp (marketing model)", () => {
+  it("returns the monthly episodes needed to sustain a full book", () => {
+    // 50 a week full, 7 visits each -> 50 * (52/12) / 7 = 30.95 a month
+    expect(newPatientsForFullBook(healthySpec({ fullClientsPerWeek: 50, avgVisitsPerPatient: 7 })))
+      .toBeCloseTo((50 * (52 / 12)) / 7, 3);
+  });
+  it("rampFractionToMonth reaches a full book exactly at the target and holds", () => {
+    expect(rampFractionToMonth(4, 4)).toBeCloseTo(1, 6);
+    expect(rampFractionToMonth(4, 3)).toBeLessThan(1);
+    expect(rampFractionToMonth(4, 9)).toBe(1);
+    expect(rampFractionToMonth(2, 2)).toBeCloseTo(1, 6);
+  });
+  it("filling faster (full by 3) makes more year-one profit than filling slow (full by 9)", () => {
+    const required = Math.ceil(newPatientsForFullBook(healthySpec({ fullClientsPerWeek: 50, avgVisitsPerPatient: 7 })));
+    const fast = forecastHire(healthySpec({ fullClientsPerWeek: 50, avgVisitsPerPatient: 7, newPatientsPerMonth: required, rampFullByMonth: 3 }), settings);
+    const slow = forecastHire(healthySpec({ fullClientsPerWeek: 50, avgVisitsPerPatient: 7, newPatientsPerMonth: required, rampFullByMonth: 9 }), settings);
+    expect(fast.months[11].cumulative).toBeGreaterThan(slow.months[11].cumulative);
+    // both reach a full book plateau
+    expect(fast.plateauCaseloadWeekly).toBeCloseTo(50, 0);
   });
 });
 
