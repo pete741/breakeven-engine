@@ -100,12 +100,13 @@ const WEEKS_PER_MONTH = 52 / 12; // 4.3333...
 
 // Transparent ramp curves: the fraction of a full book reached by the end of
 // each month. Shown openly in the tool as an editable assumption, never hidden
-// behind a formula. They saturate at 1 and the last value is held for every
-// later month.
+// behind a formula. Calibrated across professions so a full book lands at:
+// fast month 4, typical month 6, slow month 9. They saturate at 1 and the last
+// value is held for every later month.
 const RAMP_CURVES: Record<RampShape, number[]> = {
-  fast: [0.4, 0.65, 0.85, 0.95, 1, 1],
-  typical: [0.2, 0.4, 0.6, 0.75, 0.88, 1, 1],
-  slow: [0.1, 0.25, 0.4, 0.55, 0.68, 0.8, 0.9, 1, 1],
+  fast: [0.5, 0.78, 0.93, 1],
+  typical: [0.18, 0.36, 0.54, 0.7, 0.86, 1],
+  slow: [0.08, 0.18, 0.3, 0.42, 0.54, 0.66, 0.78, 0.9, 1],
 };
 
 export function rampFractionAt(shape: RampShape, month: number): number {
@@ -118,6 +119,13 @@ export function rampFractionAt(shape: RampShape, month: number): number {
 /** Expose the ramp curve so the UI can render it as a visible assumption. */
 export function rampCurve(shape: RampShape): number[] {
   return [...RAMP_CURVES[shape]];
+}
+
+/** The month a full book is first reached for a given ramp shape (4, 6 or 9). */
+export function rampFullMonth(shape: RampShape): number {
+  const curve = RAMP_CURVES[shape];
+  const i = curve.findIndex((v) => v >= 1);
+  return (i === -1 ? curve.length : i) + 1;
 }
 
 function safe(n: number): number {
