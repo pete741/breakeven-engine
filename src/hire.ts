@@ -162,22 +162,14 @@ export function forecastHire(
   const bindingConstraint: BindingConstraint =
     cap < full - 1e-9 ? "newPatientFlow" : "ramp";
 
-  const months: HireMonth[] = [];
-  let cumulative = 0;
-  let maxCashDip = 0;
-  let maxCashDipMonth = 0;
-  let breakevenMonth: number | null = null;
-  let steadyMonthlyContribution = 0;
-
-  for (let m = 1; m <= horizonMonths; m++) {
-    const rampFraction = rampFractionAt(spec.rampShape, m);
-    const caseloadWeekly = Math.min(rampFraction * full, cap);
-
-    // Run the validated engine for a single site holding only this hire. The
-    // site's weekly profit IS the marginal weekly contribution of the hire:
-    // their billings, minus their rolling pay (and leave accrual), minus the
-    // extra weekly running cost they add.
-    const result = computeBusiness({
+  // Run the validated engine for a single site holding only this hire at a given
+  // weekly caseload. The site's weekly profit IS the hire's marginal weekly
+  // contribution (their billings, minus their rolling pay and leave accrual,
+  // minus the extra weekly running cost). profitYearly is the revenue-week aware
+  // annual figure (it bills only the revenue weeks and still pays base through
+  // the leave weeks), which is the honest steady state number.
+  function runAt(caseloadWeekly: number) {
+    const site = computeBusiness({
       clinicName: "hire",
       settings: engineSettings,
       sites: [
@@ -200,13 +192,26 @@ export function forecastHire(
           ],
         },
       ],
-    });
+    }).sites[0];
+    return site;
+  }
 
-    const site = result.sites[0];
+  const months: HireMonth[] = [];
+  let cumulative = 0;
+  // Seed the dip at +Infinity so the true minimum cumulative cash is always
+  // captured with a valid month index, even when the hire is cash positive from
+  // month one and the cumulative never actually goes negative.
+  let maxCashDip = Infinity;
+  let maxCashDipMonth = 1;
+  let breakevenMonth: number | null = null;
+
+  for (let m = 1; m <= horizonMonths; m++) {
+    const rampFraction = rampFractionAt(spec.rampShape, m);
+    const caseloadWeekly = Math.min(rampFraction * full, cap);
+
+    const site = runAt(caseloadWeekly);
     const person = site.people[0];
     const billingsMonthly = person.revenueWeekly * WEEKS_PER_MONTH;
-    // Pay including the leave liability accrual the engine tracks, so the cash
-    // figure is honest rather than understating the cost of an employee.
     const payWeekly = person.payWeekly + person.leaveWeekly;
     const payMonthly = payWeekly * WEEKS_PER_MONTH;
     const contributionMonthly = site.profitWeekly * WEEKS_PER_MONTH;
@@ -216,11 +221,9 @@ export function forecastHire(
       maxCashDip = cumulative;
       maxCashDipMonth = m;
     }
-    if (breakevenMonth === null && cumulative >= 0 && m > 1) {
+    if (breakevenMonth === null && cumulative >= 0) {
       breakevenMonth = m;
     }
-    // Capture the contribution once the book has plateaued (last month is steady).
-    steadyMonthlyContribution = contributionMonthly;
 
     months.push({
       month: m,
@@ -236,14 +239,19 @@ export function forecastHire(
   const cumulativeAtMonth12 =
     months[Math.min(12, months.length) - 1]?.cumulative ?? 0;
 
+  // Steady state annual contribution, taken from the engine's revenue-week aware
+  // profitYearly at the settled (plateau) caseload, not profitWeekly times 52,
+  // so it matches the Rolling Break Even tool and an owner's accountant.
+  const steadyAnnualContribution = runAt(plateau).profitYearly;
+
   return {
     months,
     breakevenMonth,
-    maxCashDip,
+    maxCashDip: Number.isFinite(maxCashDip) ? maxCashDip : 0,
     maxCashDipMonth,
     plateauCaseloadWeekly: plateau,
     fullClientsPerWeek: full,
-    steadyAnnualContribution: steadyMonthlyContribution * 12,
+    steadyAnnualContribution,
     cumulativeAtMonth12,
     bindingConstraint,
   };
