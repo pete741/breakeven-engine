@@ -3,6 +3,7 @@ import {
   forecastHire,
   demandCapWeekly,
   rampFractionAt,
+  rampFullMonth,
   type HireSpec,
   type HireSettings,
 } from "./hire";
@@ -37,6 +38,15 @@ describe("ramp curves", () => {
     expect(rampFractionAt("typical", 6)).toBe(1);
     expect(rampFractionAt("typical", 24)).toBe(1);
     expect(rampFractionAt("fast", 1)).toBeGreaterThan(rampFractionAt("slow", 1));
+  });
+  it("reach a full book at the agreed months: fast 4, typical 6, slow 9", () => {
+    expect(rampFullMonth("fast")).toBe(4);
+    expect(rampFullMonth("typical")).toBe(6);
+    expect(rampFullMonth("slow")).toBe(9);
+    // and the month before is still below a full book
+    expect(rampFractionAt("fast", 3)).toBeLessThan(1);
+    expect(rampFractionAt("typical", 5)).toBeLessThan(1);
+    expect(rampFractionAt("slow", 8)).toBeLessThan(1);
   });
 });
 
