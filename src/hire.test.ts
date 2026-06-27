@@ -149,6 +149,27 @@ describe("steady annual contribution is revenue-week aware (not profitWeekly*52)
   });
 });
 
+describe("starting caseload (taking over clients)", () => {
+  it("a taken-over caseload shrinks the cash dip and brings break even forward", () => {
+    const cold = forecastHire(healthySpec({ startingCaseload: 0 }), settings);
+    const warm = forecastHire(healthySpec({ startingCaseload: 20 }), settings);
+    expect(warm.maxCashDip).toBeGreaterThan(cold.maxCashDip); // less negative
+    const coldBe = cold.breakevenMonth ?? Infinity;
+    const warmBe = warm.breakevenMonth ?? Infinity;
+    expect(warmBe).toBeLessThanOrEqual(coldBe);
+  });
+  it("starting on a full book breaks even almost immediately", () => {
+    const f = forecastHire(healthySpec({ startingCaseload: 40, newPatientsPerMonth: 999 }), settings);
+    expect(f.months[0].caseloadWeekly).toBeGreaterThanOrEqual(39);
+    expect(f.breakevenMonth).toBeLessThanOrEqual(2);
+  });
+  it("an inherited book above new patient flow holds as the plateau floor", () => {
+    // 2 new patients/mo is a tiny flow, but they inherit 25 a week.
+    const f = forecastHire(healthySpec({ startingCaseload: 25, newPatientsPerMonth: 2, avgVisitsPerPatient: 6 }), settings);
+    expect(f.plateauCaseloadWeekly).toBeCloseTo(25, 4);
+  });
+});
+
 describe("robustness", () => {
   it("never returns NaN on empty or zero inputs", () => {
     const f = forecastHire(
