@@ -104,6 +104,41 @@ describe("pay model matters (the mandatory fix)", () => {
   });
 });
 
+describe("no cash dip (cash positive from month one) does not break the indices", () => {
+  // Pure commission contractor, no base wage, no extra cost, plenty of demand:
+  // every month is cash positive, so the cumulative never goes negative.
+  const f = forecastHire(
+    healthySpec({
+      employmentType: "contractor",
+      hourlyRate: 0,
+      extraWeeklyCost: 0,
+      newPatientsPerMonth: 999,
+    }),
+    settings
+  );
+  it("keeps a valid dip month index even with no negative dip", () => {
+    expect(f.maxCashDipMonth).toBeGreaterThanOrEqual(1);
+    expect(f.maxCashDipMonth).toBeLessThanOrEqual(f.months.length);
+    expect(f.months[f.maxCashDipMonth - 1]).toBeDefined();
+    expect(Number.isFinite(f.maxCashDip)).toBe(true);
+  });
+  it("breaks even in month one when cash positive from the start", () => {
+    expect(f.months[0].cumulative).toBeGreaterThanOrEqual(0);
+    expect(f.breakevenMonth).toBe(1);
+  });
+});
+
+describe("steady annual contribution is revenue-week aware (not profitWeekly*52)", () => {
+  it("is materially below a naive 52 week annualisation for a salaried hire", () => {
+    const f = forecastHire(healthySpec(), settings);
+    const lastMonthly = f.months[f.months.length - 1].contributionMonthly;
+    const naiveAnnual = lastMonthly * 12; // profitWeekly * 52
+    // The honest figure pays base+super through the leave weeks, so it is lower.
+    expect(f.steadyAnnualContribution).toBeLessThan(naiveAnnual);
+    expect(f.steadyAnnualContribution).toBeGreaterThan(0);
+  });
+});
+
 describe("robustness", () => {
   it("never returns NaN on empty or zero inputs", () => {
     const f = forecastHire(
