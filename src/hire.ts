@@ -38,8 +38,16 @@ export interface HireSpec {
   fullClientsPerWeek: number;
   /** Ramp curve: how a new book fills over the early months. */
   rampShape: RampShape;
+  /** Optional override: target the month a full book is reached (e.g. 2 to 9). When
+   *  set and positive it replaces rampShape with a steady build to a full book by
+   *  that month. Used by the marketing forecast to model filling faster. */
+  rampFullByMonth?: number;
   /** New patients per month the clinic can realistically feed this practitioner. */
   newPatientsPerMonth: number;
+  /** Reactivated clients per month: existing database patients returning for a new
+   *  episode of care. They feed the book just like a new patient but cost nothing
+   *  to acquire (no marketing). Defaults to 0. */
+  reactivationsPerMonth?: number;
   /** Average number of visits a patient makes across a full episode of care. */
   avgVisitsPerPatient: number;
   /** Extra running cost per week this hire adds (room, admin time, software, consumables). */
@@ -132,6 +140,15 @@ export function rampFullMonth(shape: RampShape): number {
   return (i === -1 ? curve.length : i) + 1;
 }
 
+/** A steady build to a full book by an arbitrary target month (used for the
+ *  marketing "have them full by month T" control, T from about 2 to 9). A gentle
+ *  ease in that reaches a full book exactly at the target month and holds. */
+export function rampFractionToMonth(targetMonth: number, month: number): number {
+  if (month < 1) return 0;
+  const T = Math.max(1, targetMonth);
+  return Math.min(1, Math.pow(month / T, 1.3));
+}
+
 function safe(n: number): number {
   return Number.isFinite(n) ? n : 0;
 }
@@ -145,8 +162,17 @@ function safe(n: number): number {
  */
 export function demandCapWeekly(spec: HireSpec): number {
   const np = Math.max(0, safe(spec.newPatientsPerMonth));
+  const react = Math.max(0, safe(spec.reactivationsPerMonth ?? 0));
   const visits = Math.max(0, safe(spec.avgVisitsPerPatient));
-  return (np * visits) / WEEKS_PER_MONTH;
+  return ((np + react) * visits) / WEEKS_PER_MONTH;
+}
+
+/** Total new episodes a month (new patients plus reactivations) needed to sustain
+ *  a full book. The marketing maths subtracts current new patients and
+ *  reactivations from this to find the shortfall marketing has to cover. */
+export function newPatientsForFullBook(spec: HireSpec): number {
+  const visits = Math.max(1e-9, safe(spec.avgVisitsPerPatient));
+  return (Math.max(0, safe(spec.fullClientsPerWeek)) * WEEKS_PER_MONTH) / visits;
 }
 
 /**
@@ -222,7 +248,10 @@ export function forecastHire(
   let breakevenMonth: number | null = null;
 
   for (let m = 1; m <= horizonMonths; m++) {
-    const rampFraction = rampFractionAt(spec.rampShape, m);
+    const rampFraction =
+      spec.rampFullByMonth && spec.rampFullByMonth > 0
+        ? rampFractionToMonth(spec.rampFullByMonth, m)
+        : rampFractionAt(spec.rampShape, m);
     // The book ramps from the baseline up toward a full book, held under the
     // effective ceiling (new patient flow or the inherited book).
     const organic = baseline + (full - baseline) * rampFraction;
