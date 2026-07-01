@@ -140,13 +140,15 @@ describe("no cash dip (cash positive from month one) does not break the indices"
   });
 });
 
-describe("steady annual contribution is revenue-week aware (not profitWeekly*52)", () => {
-  it("is materially below a naive 52 week annualisation for a salaried hire", () => {
+describe("cash walk is revenue-week aware and ties to the steady figure", () => {
+  it("annualising the plateau month reproduces steadyAnnualContribution", () => {
+    // H1 regression guard: the monthly cash walk must be on the same
+    // profitYearly basis as the headline steady figure. If the walk regresses
+    // to profitWeekly*52/12 (billing all 52 weeks, reward through leave), 12x
+    // the plateau month would exceed steadyAnnualContribution and this fails.
     const f = forecastHire(healthySpec(), settings);
-    const lastMonthly = f.months[f.months.length - 1].contributionMonthly;
-    const naiveAnnual = lastMonthly * 12; // profitWeekly * 52
-    // The honest figure pays base+super through the leave weeks, so it is lower.
-    expect(f.steadyAnnualContribution).toBeLessThan(naiveAnnual);
+    const plateauMonthly = f.months[f.months.length - 1].contributionMonthly;
+    expect(plateauMonthly * 12).toBeCloseTo(f.steadyAnnualContribution, 2);
     expect(f.steadyAnnualContribution).toBeGreaterThan(0);
   });
 });
