@@ -116,12 +116,44 @@ describe("Clinic 1 worked example (matches the spreadsheet)", () => {
     expect(site.profitWeekly).toBeCloseTo(243.7462857, 2);
   });
 
-  it("yearly profit, margin, quarter and break even (H35 / H36 / H37 / F36)", () => {
+  it("yearly profit, margin, quarter (H35 / H36 / H37)", () => {
     expect(site.revenueYearly).toBeCloseTo(507840, 2);
     expect(site.profitYearly).toBeCloseTo(-27510.8992, 2);
     expect(site.profitMargin).toBeCloseTo(-0.05417237555, 6);
     expect(site.profitQuarter).toBeCloseTo(-6877.7248, 2);
-    expect(site.breakevenClients).toBeCloseTo(46.94023354, 4);
+  });
+
+  // Break-even INTENTIONALLY diverges from the sheet's F36 (46.94). The sheet's
+  // figure was totalCostWeekly/avgSpend, which ignored the leave-week burden and
+  // is why this very clinic reads a $27.5k annual LOSS while sitting at 48
+  // clients, "above" the old break-even. The engine now reports the annually
+  // consistent break-even (~50.60), the caseload at which profitYearly is zero.
+  it("break-even is the annually-consistent caseload (supersedes sheet F36)", () => {
+    expect(site.breakevenClients).toBeCloseTo(50.60027403, 4);
+    // Sanity: it must sit above the current loss-making 48-client caseload.
+    expect(site.breakevenClients!).toBeGreaterThan(site.totalClientsWeekly);
+  });
+});
+
+describe("break-even is annually consistent (E1 regression guard)", () => {
+  it("running exactly at breakevenClients yields ~zero annual profit", () => {
+    const r = computeBusiness(clinic1);
+    const be = r.sites[0].breakevenClients!;
+    // Pete bills nothing, so the blended spend ($230) is independent of Megan's
+    // caseload; putting her on exactly the break-even caseload must drive the
+    // site's yearly profit to ~0. The old figure left this at -$27.5k.
+    const atBreakeven = computeBusiness({
+      ...clinic1,
+      sites: [
+        {
+          ...clinic1.sites[0],
+          people: clinic1.sites[0].people.map((p) =>
+            p.id === "megan" ? { ...p, clientsPerWeek: be } : p
+          ),
+        },
+      ],
+    });
+    expect(atBreakeven.sites[0].profitYearly).toBeCloseTo(0, 2);
   });
 });
 

@@ -259,10 +259,16 @@ export function forecastHire(
 
     const site = runAt(caseloadWeekly);
     const person = site.people[0];
-    const billingsMonthly = person.revenueWeekly * WEEKS_PER_MONTH;
-    const payWeekly = person.payWeekly + person.leaveWeekly;
-    const payMonthly = payWeekly * WEEKS_PER_MONTH;
-    const contributionMonthly = site.profitWeekly * WEEKS_PER_MONTH;
+    // Revenue-week aware, on the SAME annual basis as steadyAnnualContribution
+    // (profitYearly), not a naive profitWeekly * 52. The old walk billed all 52
+    // weeks and paid reward through the leave weeks, overstating a salaried
+    // hire's yearly cash contribution by ~20%+ and so reporting an optimistic
+    // break-even month and a too-shallow cash dip. Dividing each month's
+    // caseload-specific yearly figures by 12 keeps the plateau year's monthly
+    // contribution consistent with the headline steady figure.
+    const billingsMonthly = person.yearlyRevenue / 12;
+    const payMonthly = person.yearlyPay / 12;
+    const contributionMonthly = site.profitYearly / 12;
 
     cumulative += contributionMonthly;
     if (cumulative < maxCashDip) {

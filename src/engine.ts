@@ -338,13 +338,15 @@ function computeSite(site: Site, s: Settings): SiteResult {
   const weeklyProfitExcLeave =
     totalRevenueWeekly - site.weeklyExpenses - wagesExcLeaveWeekly;
 
-  // H35: yearly profit. Revenue and reward weeks run for revenueWeeks; through
-  // the non revenue weeks the site still pays base+super and full expenses with
-  // no revenue coming in.
-  const profitYearly =
-    weeklyProfitExcLeave * revenueWeeks -
-    nonRevenueWeeks * site.weeklyExpenses -
-    nonRevenueWeeks * baseSuperTotalWeekly;
+  // H35: yearly profit = annual revenue less annual wages and a full year of
+  // expenses. Annual wages are summed from each person's revenue-week-aware
+  // yearly pay, so a contractor is paid ONLY for the weeks they work while an
+  // employee is paid base+super through the leave weeks. (Summing per person is
+  // identical to the sheet for an all-employee book, but no longer over-pays a
+  // contractor through leave they never accrue.) Expenses run all 52 weeks.
+  const annualWages = people.reduce((a, p) => a + p.yearlyPay, 0);
+  const annualExpenses = site.weeklyExpenses * 52;
+  const profitYearly = revenueYearly - annualWages - annualExpenses;
 
   // When there is no revenue there is nothing to measure margin against and no
   // blended spend to break even on. Return null (honest "n/a") rather than 0,
@@ -352,7 +354,20 @@ function computeSite(site: Site, s: Settings): SiteResult {
   // that is in fact losing money every week.
   const profitMargin = revenueYearly > 0 ? profitYearly / revenueYearly : null;
   const profitQuarter = profitYearly / 4;
-  const breakevenClients = avgSpend > 0 ? totalCostWeekly / avgSpend : null;
+
+  // Break-even on an ANNUAL basis: the weekly caseload at which yearly profit is
+  // zero. The old totalCostWeekly/avgSpend spread only an ex-super leave accrual
+  // across the year and ignored that full expenses AND base+super keep running
+  // through the non-revenue (leave) weeks with no revenue coming in. A clinic
+  // sitting exactly on that figure quietly lost money every year (a leave-heavy
+  // employee book could be tens of thousands down while reading "at break even").
+  // Anchoring to profitYearly removes that contradiction: at breakevenClients,
+  // profitYearly ~= 0. Wages are held at the current structure (the same
+  // linearisation the old figure used), so an on-reward book breaks even a touch
+  // sooner than reported — the conservative direction.
+  const annualisedWeeklyCost =
+    revenueWeeks > 0 ? (annualWages + annualExpenses) / revenueWeeks : totalCostWeekly;
+  const breakevenClients = avgSpend > 0 ? annualisedWeeklyCost / avgSpend : null;
   const clientsVsBreakeven =
     breakevenClients !== null ? totalClientsWeekly - breakevenClients : null;
 
